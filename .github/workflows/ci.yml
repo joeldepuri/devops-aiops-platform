@@ -5,6 +5,8 @@ on:
     branches:
       - project-demo
       - main
+    paths-ignore:
+      - 'gitops/**'
   workflow_dispatch:
 
 env:
