@@ -97,4 +97,5 @@ jobs:
           git config user.email "github-actions@github.com"
           git add gitops/k8s/
           git diff --staged --quiet || git commit -m "ci: update image tags to ${{ github.sha }}"
+          git pull --rebase origin ${{ github.ref_name }}
           git push
