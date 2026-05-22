@@ -12,13 +12,20 @@ metadata:
       product-service=522814724315.dkr.ecr.us-east-1.amazonaws.com/product-service,
       user-service=522814724315.dkr.ecr.us-east-1.amazonaws.com/user-service,
       frontend=522814724315.dkr.ecr.us-east-1.amazonaws.com/frontend
-    argocd-image-updater.argoproj.io/auth.update-strategy: latest
-    argocd-image-updater.argoproj.io/gateway.update-strategy: latest
-    argocd-image-updater.argoproj.io/orders.update-strategy: latest
-    argocd-image-updater.argoproj.io/order-service.update-strategy: latest
-    argocd-image-updater.argoproj.io/product-service.update-strategy: latest
-    argocd-image-updater.argoproj.io/user-service.update-strategy: latest
-    argocd-image-updater.argoproj.io/frontend.update-strategy: latest
+    argocd-image-updater.argoproj.io/auth.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/gateway.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/orders.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/order-service.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/product-service.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/user-service.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/frontend.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/auth.pull-secret: pullsecret:argocd/ecr-pull-secret
+    argocd-image-updater.argoproj.io/gateway.pull-secret: pullsecret:argocd/ecr-pull-secret
+    argocd-image-updater.argoproj.io/orders.pull-secret: pullsecret:argocd/ecr-pull-secret
+    argocd-image-updater.argoproj.io/order-service.pull-secret: pullsecret:argocd/ecr-pull-secret
+    argocd-image-updater.argoproj.io/product-service.pull-secret: pullsecret:argocd/ecr-pull-secret
+    argocd-image-updater.argoproj.io/user-service.pull-secret: pullsecret:argocd/ecr-pull-secret
+    argocd-image-updater.argoproj.io/frontend.pull-secret: pullsecret:argocd/ecr-pull-secret
     argocd-image-updater.argoproj.io/write-back-method: git
     argocd-image-updater.argoproj.io/git-branch: project-demo
 spec:
