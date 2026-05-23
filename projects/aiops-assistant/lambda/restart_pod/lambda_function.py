@@ -57,8 +57,21 @@ def k8s_delete(endpoint, token, path):
         return json.loads(resp.read())
 
 
-def lambda_handler(event, context):
+def _parse_params(event):
+    """Handle both GET query params and POST request body formats from Bedrock Agent."""
     params = {p["name"]: p["value"] for p in event.get("parameters", [])}
+    body_props = (
+        event.get("requestBody", {})
+        .get("content", {})
+        .get("application/json", {})
+        .get("properties", [])
+    )
+    params.update({p["name"]: p["value"] for p in body_props})
+    return params
+
+
+def lambda_handler(event, context):
+    params = _parse_params(event)
 
     cluster_name = params.get("cluster_name", DEFAULT_CLUSTER)
     namespace = params.get("namespace", DEFAULT_NAMESPACE)

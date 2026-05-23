@@ -25,6 +25,15 @@ RUNBOOK_INDEX = {
     "pending": "deployment-unavailable.md",
     "imagepull": "image-pull-error.md",
     "errimagepull": "image-pull-error.md",
+    "invalidimage": "image-pull-error.md",
+    "readiness": "readiness-probe-failure.md",
+    "probe": "readiness-probe-failure.md",
+    "notready": "readiness-probe-failure.md",
+    "noendpoints": "service-no-endpoints.md",
+    "servicenoendpoints": "service-no-endpoints.md",
+    "503": "service-no-endpoints.md",
+    "labelmismatch": "service-no-endpoints.md",
+    "zeroreplicasavailable": "service-no-endpoints.md",
 }
 
 
