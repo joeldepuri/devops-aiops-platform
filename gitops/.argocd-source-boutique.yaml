@@ -6,4 +6,4 @@ kustomize:
   - 522814724315.dkr.ecr.us-east-1.amazonaws.com/order-service:f8481b2b9dca24082f31b4b1a5c79418a00a67b9
   - 522814724315.dkr.ecr.us-east-1.amazonaws.com/product-service:f8481b2b9dca24082f31b4b1a5c79418a00a67b9
   - 522814724315.dkr.ecr.us-east-1.amazonaws.com/user-service:f8481b2b9dca24082f31b4b1a5c79418a00a67b9
-  - 522814724315.dkr.ecr.us-east-1.amazonaws.com/frontend:c11f77f180087100006ee773106673a95744f6cb
+  - 522814724315.dkr.ecr.us-east-1.amazonaws.com/frontend:f8481b2b9dca24082f31b4b1a5c79418a00a67b9
