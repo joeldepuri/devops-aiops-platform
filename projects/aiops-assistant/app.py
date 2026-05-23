@@ -17,7 +17,7 @@ import os
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
-load_dotenv()
+load_dotenv(override=True)
 
 # --- Config from environment ---
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
@@ -289,7 +289,7 @@ if prompt:
 
     # Get agent response
     with st.chat_message("assistant"):
-        with st.spinner("🔍 Kira is investigating..."):
+        with st.spinner("🔍 Jimmy is investigating..."):
             response = invoke_agent(prompt)
         st.markdown(response)
 

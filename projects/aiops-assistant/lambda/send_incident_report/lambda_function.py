@@ -9,8 +9,20 @@ SNS_TOPIC_ARN = os.environ.get("SNS_TOPIC_ARN", "arn:aws:sns:us-east-1:522814724
 SEVERITY_EMOJI = {"critical": "🚨", "high": "🔴", "medium": "🟡", "low": "🟢", "info": "ℹ️"}
 
 
-def lambda_handler(event, context):
+def _parse_params(event):
     params = {p["name"]: p["value"] for p in event.get("parameters", [])}
+    body_props = (
+        event.get("requestBody", {})
+        .get("content", {})
+        .get("application/json", {})
+        .get("properties", [])
+    )
+    params.update({p["name"]: p["value"] for p in body_props})
+    return params
+
+
+def lambda_handler(event, context):
+    params = _parse_params(event)
 
     incident_summary  = params.get("incident_summary", "No summary provided")
     severity          = params.get("severity", "medium").lower()
