@@ -23,15 +23,15 @@ load_dotenv()
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 AWS_SESSION_TOKEN = os.getenv("AWS_SESSION_TOKEN")
-AWS_REGION = os.getenv("AWS_REGION", "eu-north-1")
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 AGENT_ID = os.getenv("BEDROCK_AGENT_ID")
 AGENT_ALIAS_ID = os.getenv("BEDROCK_AGENT_ALIAS_ID")
 
 
 # --- Page Config ---
 st.set_page_config(
-    page_title="Kira — AIOps Assistant",
-    page_icon="🔍",
+    page_title="Jimmy — AIOps Runbook Agent",
+    page_icon="⚡",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -206,8 +206,8 @@ def invoke_agent(prompt: str) -> str:
 # --- Header ---
 st.markdown("""
 <div class="main-header">
-    <h1>⚡ KIRA</h1>
-    <p>AIOps Assistant — Root Cause Analysis Engine</p>
+    <h1>⚡ JIMMY</h1>
+    <p>AIOps Runbook Automation Agent — Detect · Remediate · Report</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -300,16 +300,20 @@ if prompt:
 with st.sidebar:
     st.markdown("""
     <div style="font-family: 'JetBrains Mono', monospace; padding: 1rem 0;">
-        <h3 style="color: #22d3ee; font-size: 1rem;">⚡ KIRA</h3>
-        <p style="color: #5a6270; font-size: 0.8rem;">AIOps Assistant v1.0</p>
+        <h3 style="color: #22d3ee; font-size: 1rem;">⚡ JIMMY</h3>
+        <p style="color: #5a6270; font-size: 0.8rem;">Runbook Automation Agent v2.0</p>
     </div>
     """, unsafe_allow_html=True)
 
     st.markdown("---")
     st.markdown("**Tools Available:**")
     st.markdown("- 📋 `fetch_logs` — CloudWatch Logs")
-    st.markdown("- 📊 `fetch_metrics` — CloudWatch Metrics")
-    st.markdown("- 🏥 `fetch_service_health` — ECS/RDS/ALB")
+    st.markdown("- 📊 `fetch_metrics` — Prometheus Metrics")
+    st.markdown("- 🏥 `fetch_service_health` — EKS Pod/Node Health")
+    st.markdown("- 📖 `fetch_runbook` — S3 Runbook Lookup")
+    st.markdown("- 🔄 `restart_pod` — Kill & Reschedule Pod")
+    st.markdown("- 📈 `scale_deployment` — Change Replica Count")
+    st.markdown("- 📧 `send_incident_report` — SNS Email Alert")
 
     st.markdown("---")
     st.markdown("**Sample Questions:**")
@@ -319,7 +323,9 @@ with st.sidebar:
     - Check database connections
     - Are all services healthy?
     - What errors happened in the last 2 hours?
-    - Is there a memory leak?
+    - order-service is CrashLoopBackOff, fix it
+    - Scale up frontend to handle traffic spike
+    - Run the OOMKilled runbook for auth pod
     """)
 
     st.markdown("---")
