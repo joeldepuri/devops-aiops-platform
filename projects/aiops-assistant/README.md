@@ -229,7 +229,16 @@ aiops-assistant/
 
 ---
 
-## Sample Prompts for Jimmy
+## What Jimmy Can Answer
+
+Jimmy is powered by **Claude 3.5 Haiku via AWS Bedrock**. The 7 automated incident types are what the `incident_detector` Lambda scans for on a schedule — they are not a limit on what you can ask Jimmy directly.
+
+### Automated incident response (the 7 types)
+These are handled autonomously by EventBridge → `incident_detector` → Jimmy without any human prompt:
+- CrashLoopBackOff, OOMKilled, ImagePullBackOff, Readiness Probe Failure, High Restart Count, Pending Too Long, Service No Endpoints
+
+### Any DevOps / Kubernetes question about this platform
+Jimmy has access to your live cluster, logs, and metrics — so you can ask anything:
 
 - `order-service is in CrashLoopBackOff — investigate, fix, and report`
 - `Why are we seeing 503 errors in the last hour?`
@@ -237,6 +246,14 @@ aiops-assistant/
 - `Run the OOMKilled runbook for auth pod`
 - `Check all services and send me a health report`
 - `Are all pods healthy? Any restarts?`
+- `What does the CPU spike on product-service at 14:30 UTC mean?`
+- `Explain what's in the pod-crashloop runbook`
+- `How do I debug a Pending pod in Kubernetes?`
+- `What PromQL query would show me 5xx error rate per service?`
+- `Walk me through what a readiness probe failure means and how to fix it`
+
+### General questions (outside DevOps)
+Because the underlying model is Claude, Jimmy can answer questions on any topic — it will just respond in its SRE persona. The system prompt defines Jimmy's role and preferred workflow but does not restrict it from answering general queries. This is intentional: the 7 incident types represent the most common production Kubernetes issues, but the agent is not limited to them.
 
 ---
 

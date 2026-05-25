@@ -185,6 +185,7 @@ What Jimmy does:
 - **Runbook lookup** — retrieves the correct Markdown runbook from S3 before taking any action
 - **Autonomous remediation** — restarts pods or scales deployments as directed by the runbook
 - **Email reporting** — publishes a structured incident report via SNS → Gmail on every incident
+- **Open-ended Q&A** — because Jimmy is powered by **Claude 3.5 Haiku via AWS Bedrock**, you can ask him anything through the Streamlit UI. The 7 incident types are what the automated scanner watches for — they are not a ceiling on what you can ask. Jimmy answers any Kubernetes or DevOps question about the platform (PromQL, debugging, architecture), and since Claude is the model underneath, it can answer general questions outside DevOps as well — it will just respond in its SRE persona
 
 Because modern DevOps is no longer just automation — it's **automation + intelligence + self-healing**.
 
