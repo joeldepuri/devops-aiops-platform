@@ -1,36 +1,78 @@
-# AIOps Assistant — Kira
+# AIOps Assistant — Jimmy
 
-An AI-powered SRE assistant built on AWS Bedrock Agent. Kira diagnoses production incidents by querying CloudWatch Logs, CloudWatch Metrics (via Prometheus), and EKS cluster health — then responds with root cause, evidence, and fix recommendations.
+An AI-powered SRE agent built on AWS Bedrock. Jimmy automates incident response end-to-end: it detects Kubernetes incidents every 5 minutes, looks up the correct runbook from S3, remediates by restarting pods or scaling deployments, verifies the fix, and sends a structured email report via SNS.
+
+This is a purpose-built evolution beyond the original **Kira** agent (by Vishakha Sadhwani), which focused on log analysis and root cause diagnosis. Jimmy adds autonomous remediation, runbook-driven workflows, and automated incident detection.
 
 ---
 
 ## Architecture
 
 ```
-Streamlit UI (app.py)
+EventBridge (every 5 min)
       │
       ▼
-Bedrock Agent (Kira)
+incident_detector Lambda
+  - Scans EKS cluster for 7 incident types
+  - Deduplicates, builds prompt
       │
-      ├── fetch_logs         → CloudWatch Logs
-      ├── fetch_metrics      → Prometheus (ELB endpoint)
-      └── fetch_service_health → EKS cluster + node groups
+      ▼
+Bedrock Agent (Jimmy)
+      │
+      ├── fetch_service_health  → EKS cluster + node groups + pods
+      ├── fetch_logs            → CloudWatch Logs
+      ├── fetch_metrics         → Prometheus (ELB endpoint)
+      ├── fetch_runbook         → S3 runbook bucket
+      ├── restart_pod           → Kubernetes API (delete pod)
+      ├── scale_deployment      → Kubernetes API (patch replicas)
+      └── send_incident_report  → SNS → Gmail
+```
+
+---
+
+## Incident Types Detected
+
+| # | Incident Type | Detection Logic |
+|---|---|---|
+| 1 | CrashLoopBackOff | Container waiting reason = CrashLoopBackOff |
+| 2 | OOMKilled | Container terminated/waiting reason contains OOM |
+| 3 | ImagePullBackOff | Waiting reason in {ImagePullBackOff, ErrImagePull} |
+| 4 | Readiness Probe Failure | Phase=Running but Ready condition=False |
+| 5 | High Restart Count | restartCount ≥ 5 while pod is Running |
+| 6 | Pending Too Long | Phase=Pending for > 5 minutes |
+| 7 | Service No Endpoints | Deployment has 0 availableReplicas + 0 readyReplicas |
+
+---
+
+## Runbook Automation Workflow
+
+Jimmy always follows this 7-step sequence before taking any action:
+
+```
+Step 1  ASSESS    — fetch_service_health (identify unhealthy pods/nodes)
+Step 2  DIAGNOSE  — fetch_logs + fetch_metrics (error pattern + spike)
+Step 3  CLASSIFY  — determine incident type
+Step 4  RUNBOOK   — fetch_runbook from S3 (always read before acting)
+Step 5  REMEDIATE — restart_pod or scale_deployment per runbook guidance
+Step 6  VERIFY    — fetch_service_health again (confirm fix worked)
+Step 7  REPORT    — send_incident_report (SNS → Gmail)
 ```
 
 ---
 
 ## Prerequisites
 
-- AWS account with access to Bedrock (model access enabled for your chosen model)
-- EKS cluster running with Prometheus exposed via a LoadBalancer service
+- AWS account with Bedrock model access enabled (Claude 3.5 Haiku)
+- EKS cluster (`eks-cluster`) running the boutique application
+- Prometheus exposed as a LoadBalancer service in the `monitoring` namespace
+- S3 bucket for runbooks (created by `deploy.sh`)
+- SNS topic with a confirmed email subscription (Gmail)
 - AWS CLI configured (`aws configure`)
 - Python 3.10+
 
 ---
 
 ## Step 1: Set Up IAM Roles
-
-Run the provided script to create both required IAM roles:
 
 ```bash
 chmod +x setup-iam.sh
@@ -41,78 +83,82 @@ This creates:
 
 | Role | Used By | Permissions |
 |------|---------|-------------|
-| `aiops-lambda-role` | All 3 Lambda functions | CloudWatch Logs read, EKS describe, Lambda basic execution |
-| `aiops-bedrock-agent-role` | Bedrock Agent | Invoke the 3 Lambda functions, invoke Bedrock models |
+| `aiops-lambda-role` | All Lambda functions | CloudWatch Logs read, EKS describe, Lambda basic execution, SNS publish, S3 read |
+| `aiops-bedrock-agent-role` | Bedrock Agent | Invoke the 7 Lambda functions, invoke Bedrock models |
 
 ---
 
-## Step 2: Create the Lambda Functions
+## Step 2: Upload Runbooks to S3
 
-Create the following 3 Lambda functions in the AWS Console (or via CLI). Use the code from the `lambda/` directory.
+The `runbooks/` directory contains 8 Markdown runbooks. Upload them to your S3 bucket before running `deploy.sh`:
 
-| Function Name | Code File | Execution Role |
-|---------------|-----------|----------------|
-| `aiops-fetch-logs` | `lambda/fetch_logs/lambda_function.py` | `aiops-lambda-role` |
-| `aiops-fetch-metrics` | `lambda/fetch_metrics/lambda_function.py` | `aiops-lambda-role` |
-| `aiops-fetch-health` | `lambda/fetch_health/lambda_function.py` | `aiops-lambda-role` |
+```bash
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+BUCKET="aiops-runbooks-${ACCOUNT_ID}"
 
-Runtime: **Python 3.12** | Timeout: **30 seconds**
+aws s3 mb s3://$BUCKET --region us-east-1
+
+aws s3 cp runbooks/ s3://$BUCKET/runbooks/ --recursive
+```
+
+Available runbooks:
+
+| Runbook | Incident Type |
+|---------|--------------|
+| `pod-crashloop.md` | CrashLoopBackOff, High Restart Count |
+| `oom-killed.md` | OOMKilled |
+| `image-pull-error.md` | ImagePullBackOff |
+| `readiness-probe-failure.md` | Readiness Probe Failure |
+| `deployment-unavailable.md` | Pending Too Long, Service No Endpoints |
+| `service-no-endpoints.md` | Service No Endpoints |
+| `high-cpu.md` | High CPU / resource pressure |
+| `database-connection.md` | Database connectivity issues |
 
 ---
 
 ## Step 3: Update the Prometheus URL
 
-Both `fetch_metrics` and `fetch_health` lambdas query Prometheus directly. Update the `PROMETHEUS_URL` placeholder in each file before uploading the code.
+Both `fetch_metrics` and `fetch_health` lambdas query Prometheus directly. Update `PROMETHEUS_URL` in each file before deploying:
 
-In `lambda/fetch_metrics/lambda_function.py`:
 ```python
 PROMETHEUS_URL = "http://<YOUR_PROMETHEUS_ELB_URL>:9090"
 ```
 
-In `lambda/fetch_health/lambda_function.py`:
-```python
-PROMETHEUS_URL = "http://<YOUR_PROMETHEUS_ELB_URL>:9090"
-```
-
-To get the Prometheus ELB URL, expose Prometheus as a LoadBalancer service:
+To get the Prometheus ELB URL:
 
 ```bash
 kubectl patch svc kube-prometheus-stack-prometheus -n monitoring \
   -p '{"spec": {"type": "LoadBalancer"}}'
 
 kubectl get svc kube-prometheus-stack-prometheus -n monitoring
-# Copy the EXTERNAL-IP value — that is your ELB URL
+# Copy the EXTERNAL-IP value
 ```
 
 ---
 
-## Step 4: Deploy the Bedrock Agent
+## Step 4: Deploy Everything
 
-Run the deploy script. It will:
-- Verify the Lambda functions and IAM role exist
-- Set Lambda timeouts to 30s and add Bedrock invoke permissions
-- Create the Bedrock Agent (`aiops-assistant`) with the Kira system prompt
-- Attach all 3 action groups with their OpenAPI schemas
-- Prepare the agent
+Run the deploy script. It handles all 8 Lambda functions, the Bedrock Agent, all 7 action groups, and the EventBridge schedule in one shot:
 
 ```bash
 chmod +x deploy.sh
 ./deploy.sh
 ```
 
-At the end, the script prints your **Agent ID** — keep it for the next step.
+What it does:
+
+1. **Deploys 8 Lambda functions** — 7 action groups (fetch_logs, fetch_metrics, fetch_health, fetch_runbook, restart_pod, scale_deployment, send_incident_report) + 1 EventBridge-triggered incident_detector
+2. **Creates the Bedrock Agent** named `jimmy` with the full SRE system prompt
+3. **Attaches all 7 action groups** with their OpenAPI schemas
+4. **Creates the EventBridge rule** `jimmy-incident-detector` (rate: 5 minutes)
+
+At the end, the script prints your **Agent ID**.
 
 ---
 
-## Step 5: (Optional) Generate Sample Data
+## Step 5: Confirm SNS Subscription
 
-Populate CloudWatch Logs with realistic error scenarios to test Kira:
-
-```bash
-python3 scripts/generate_sample_data.py --region us-east-1
-```
-
-This writes 100 realistic log events (503 errors, OOM kills, connection pool exhaustion, etc.) to `/app/production`.
+After `deploy.sh` runs, AWS sends a confirmation email to the address subscribed to `aiops-incident-alerts`. You must click the link in the email or Jimmy's reports won't be delivered.
 
 ---
 
@@ -122,20 +168,18 @@ This writes 100 realistic log events (503 errors, OOM kills, connection pool exh
 cp .env.example .env
 ```
 
-Edit `.env` and fill in your values:
+Edit `.env`:
 
 ```env
 AWS_REGION=us-east-1
 BEDROCK_AGENT_ID=<YOUR_AGENT_ID>
 BEDROCK_AGENT_ALIAS_ID=TSTALIASID
 
-# Optional — omit to use your AWS CLI profile / SSO / IAM role:
+# Optional — omit to use AWS CLI profile / SSO / IAM role:
 # AWS_ACCESS_KEY_ID=<YOUR_ACCESS_KEY>
 # AWS_SECRET_ACCESS_KEY=<YOUR_SECRET_KEY>
 # AWS_SESSION_TOKEN=<YOUR_SESSION_TOKEN>
 ```
-
-Install dependencies and start the UI:
 
 ```bash
 pip install -r requirements.txt
@@ -150,77 +194,112 @@ Open **http://localhost:8501** in your browser.
 
 ```
 aiops-assistant/
-├── app.py                  # Streamlit chat UI
-├── deploy.sh               # Bedrock Agent deployment script
-├── setup-iam.sh            # IAM roles and policies setup
-├── requirements.txt        # Python dependencies
-├── .env.example            # Environment variable template
+├── app.py                      # Streamlit chat UI (Jimmy branding)
+├── deploy.sh                   # Full deployment: 8 Lambdas + Bedrock Agent + EventBridge
+├── setup-iam.sh                # IAM roles and policies setup
+├── requirements.txt            # Python dependencies
+├── .env.example                # Environment variable template
 ├── lambda/
-│   ├── fetch_logs/         # CloudWatch Logs query
-│   ├── fetch_metrics/      # Prometheus metrics query
-│   └── fetch_health/       # EKS cluster health check
-├── schemas/
-│   ├── fetch_logs.json     # OpenAPI schema for fetch_logs
-│   ├── fetch_metrics.json  # OpenAPI schema for fetch_metrics
-│   └── fetch_health.json   # OpenAPI schema for fetch_health
-└── scripts/
-    └── generate_sample_data.py  # Seed CloudWatch with test errors
+│   ├── fetch_logs/             # CloudWatch Logs query
+│   ├── fetch_metrics/          # Prometheus metrics query
+│   ├── fetch_health/           # EKS cluster health check
+│   ├── fetch_runbook/          # S3 runbook retrieval
+│   ├── restart_pod/            # Kubernetes pod deletion (triggers reschedule)
+│   ├── scale_deployment/       # Kubernetes replica count change
+│   ├── send_incident_report/   # SNS publish → Gmail
+│   └── incident_detector/      # EventBridge-triggered scanner (7 incident types)
+├── runbooks/
+│   ├── pod-crashloop.md
+│   ├── oom-killed.md
+│   ├── image-pull-error.md
+│   ├── readiness-probe-failure.md
+│   ├── deployment-unavailable.md
+│   ├── service-no-endpoints.md
+│   ├── high-cpu.md
+│   └── database-connection.md
+└── schemas/
+    ├── fetch_logs.json
+    ├── fetch_metrics.json
+    ├── fetch_health.json
+    ├── fetch_runbook.json
+    ├── restart_pod.json
+    ├── scale_deployment.json
+    └── send_incident_report.json
 ```
 
 ---
 
-## Sample Questions to Ask Kira
+## Sample Prompts for Jimmy
 
-- Why are we seeing 503 errors in the last hour?
-- Is CPU usage high across the boutique services?
-- Check database connections and latency
-- Are all pods healthy? Any restarts?
-- What are the most frequent errors in the last 2 hours?
+- `order-service is in CrashLoopBackOff — investigate, fix, and report`
+- `Why are we seeing 503 errors in the last hour?`
+- `Scale up frontend to handle traffic spike`
+- `Run the OOMKilled runbook for auth pod`
+- `Check all services and send me a health report`
+- `Are all pods healthy? Any restarts?`
+
+---
+
+## What Jimmy Sends in Email
+
+Every incident report via SNS includes:
+
+```
+🔴 [HIGH] Jimmy Alert: order-service
+
+SEVERITY  : HIGH
+SERVICE   : order-service
+STATUS    : RESOLVED
+
+SUMMARY
+Pod 'order-service-xyz' was in CrashLoopBackOff with 8 restarts...
+
+ROOT CAUSE
+Container failed to connect to postgres on startup. Missing DB_HOST env var...
+
+ACTIONS TAKEN BY JIMMY
+1. Fetched pod-crashloop runbook from S3
+2. Restarted pod order-service-xyz
+3. Confirmed pod Running 1/1 after 45 seconds
+
+Agent   : Jimmy (AIOps Runbook Automation Agent)
+Cluster : eks-cluster  |  Namespace : boutique
+```
 
 ---
 
 ## Potential Issues
 
 ### Bedrock model access not enabled
-The deploy script will fail at agent creation if model access hasn't been requested. Go to **AWS Console → Bedrock → Model access** and enable access for the model used in `deploy.sh` before running the script.
+
+Go to **AWS Console → Bedrock → Model access** and enable access for `anthropic.claude-3-5-haiku-20241022-v1:0` before running `deploy.sh`.
 
 ### Prometheus URL unreachable from Lambda
-`fetch_metrics` and `fetch_health` make outbound HTTP calls to the Prometheus ELB. If Lambda is deployed inside a VPC without a NAT gateway or internet gateway route, these calls will time out. Either:
-- Keep Lambda outside a VPC (default), or
-- Ensure the VPC has a route to the internet and the Prometheus ELB security group allows inbound on port 9090.
+
+`fetch_metrics` and `fetch_health` make HTTP calls to the Prometheus ELB. Keep Lambda outside a VPC (default), or ensure a NAT gateway is present and the ELB security group allows inbound on port 9090.
 
 ### Agent stuck in PREPARING state
-After running `deploy.sh`, the agent status shows `PREPARING`. This is normal and takes 30–60 seconds. If it stays in this state, check the Bedrock console for validation errors — usually caused by a malformed OpenAPI schema or a Lambda ARN that doesn't exist.
 
-### Streamlit shows "NOT CONFIGURED"
-The app requires `BEDROCK_AGENT_ID` and `BEDROCK_AGENT_ALIAS_ID` to be set in `.env`. If you started Streamlit before populating `.env`, stop it and restart — `load_dotenv()` only reads the file at startup.
+Normal — takes 30–60 seconds. If it persists, check the Bedrock console for schema validation errors or missing Lambda ARNs.
 
-```bash
-# Stop and restart
-pkill -f "streamlit run app.py"
-streamlit run app.py
-```
+### SNS emails not arriving
+
+The subscription must be confirmed. Check your spam folder for the AWS confirmation email and click the link before testing Jimmy.
+
+### incident_detector returns api-error
+
+Verify the Lambda execution role has `eks:DescribeCluster` permissions and that the `EKS_CLUSTER_NAME` environment variable matches your actual cluster name.
 
 ### fetch_logs returns no results
-The default log group is `/eks/boutique/pods`. This group is only created after Fluent Bit starts shipping logs. Make sure `aws-for-fluent-bit` is running:
 
-```bash
-kubectl get pods -n amazon-cloudwatch
-```
-
-If the log group doesn't exist yet, run the sample data generator first (Step 5) which creates `/app/production`.
-
-### fetch_health uses wrong cluster name
-The Lambda defaults to cluster name `eks-cluster`. If your cluster has a different name, update `DEFAULT_CLUSTER` in `lambda/fetch_health/lambda_function.py` before uploading the function code.
+The default log group is `/eks/boutique/pods`. This only exists after Fluent Bit starts shipping logs. Run `aws-for-fluent-bit` in the cluster first, or run `scripts/generate_sample_data.py` to seed CloudWatch with test data.
 
 ### Lambda execution role missing permissions
-If `fetch_health` returns an access denied error on `eks:DescribeCluster`, the inline policy may not have propagated yet (IAM can take ~10–15 seconds). Wait and retry. If it persists, verify the inline policy is attached:
+
+IAM propagation takes ~10–15 seconds. Wait and retry. Verify with:
 
 ```bash
 aws iam get-role-policy \
   --role-name aiops-lambda-role \
   --policy-name aiops-lambda-inline-policy
 ```
-
-### AWS credentials not resolving in Streamlit
-If `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` are left blank in `.env`, boto3 falls back to the default credential chain (`~/.aws/credentials`, environment variables, IAM role). If none of those are configured, Bedrock calls will fail with an auth error. Either fill in the credentials in `.env` or ensure your terminal session has valid AWS credentials before starting Streamlit.
