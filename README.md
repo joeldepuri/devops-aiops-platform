@@ -1,6 +1,8 @@
 # DevOps + AIOps Series
 
-> A full end-to-end DevOps project with AIOps integration — so you can connect the dots between how AI is helping automate DevOps tasks today.
+> Most DevOps engineers build systems that run. I wanted to build one that thinks.
+
+A full end-to-end DevOps project with AIOps integration — so you can connect the dots between how AI is helping automate DevOps tasks today.
 
 ---
 
